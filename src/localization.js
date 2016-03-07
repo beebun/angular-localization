@@ -1,5 +1,5 @@
 angular.module('ngLocalize', ['ngSanitize', 'ngLocalize.Config', 'ngLocalize.Events', 'ngLocalize.InstalledLanguages'])
-    .service('locale', function ($injector, $http, $q, $log, $rootScope, $window, localeConf, localeEvents, localeSupported, localeFallbacks) {
+    .service('locale', function ($injector, $http, $q, $log, $rootScope, $window, localeConf, localeEvents, localeSupported, localeFallbacks, LanguagesService) {
         var TOKEN_REGEX = new RegExp('^[\\w\\.-]+\\.[\\w\\s\\.-]+\\w(:.*)?$'),
 
             currentLocale,
@@ -78,34 +78,25 @@ angular.module('ngLocalize', ['ngSanitize', 'ngLocalize.Config', 'ngLocalize.Eve
 
                     url += localeConf.fileExtension;
 
-                    $http.get(url)
-                        .success(function (data) {
-                            var key,
-                                path = getPath(token);
-                            // Merge the contents of the obtained data into the stored bundle.
-                            for (key in data) {
-                                if (data.hasOwnProperty(key)) {
-                                    root[key] = data[key];
-                                }
-                            }
+                    var data = LanguagesService.get(url);
+                    var key, 
+                        path = getPath(token);
+                    // Merge the contents of the obtained data into the stored bundle.
+                    for (key in data) {
+                        if (data.hasOwnProperty(key)) {
+                            root[key] = data[key];
+                        }
+                    }
+                    // Mark the bundle as having been "loaded".
+                    delete root._loading;
 
-                            // Mark the bundle as having been "loaded".
-                            delete root._loading;
+                    // Notify anyone who cares to know about this event.
+                    $rootScope.$broadcast(localeEvents.resourceUpdates);
 
-                            // Notify anyone who cares to know about this event.
-                            $rootScope.$broadcast(localeEvents.resourceUpdates);
-
-                            // If we issued a Promise for this file, resolve it now.
-                            if (deferrences[path]) {
-                                deferrences[path].resolve(path);
-                            }
-                        })
-                        .error(function (data) {
-                            $log.error("[localizationService] Failed to load: " + url);
-
-                            // We can try it again later.
-                            delete root._loading;
-                        });
+                    // If we issued a Promise for this file, resolve it now.
+                    if (deferrences[path]) {
+                        deferrences[path].resolve(path);
+                    }
                 }
             }
         }
