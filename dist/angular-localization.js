@@ -1,8 +1,8 @@
 /*!
- * angular-localization :: v1.4.1 :: 2015-12-21
+ * angular-localization :: v1.4.1 :: 2016-03-07
  * web: http://doshprompt.github.io/angular-localization
  *
- * Copyright (c) 2015 | Rahul Doshi
+ * Copyright (c) 2016 | Rahul Doshi
  * License: MIT
  */
 ;(function (angular, window, document, undefined) {
@@ -79,61 +79,76 @@ angular.module('ngLocalize')
             return result;
         }
 
+        function isFrozen (obj) {
+            return (Object.isFrozen || function (obj) {
+                return obj && obj.$$frozen;
+            })(obj);
+        }
+
+        function freeze (obj) {
+            return (Object.freeze || function (obj) {
+                if (obj) {
+                    obj.$$frozen = true;
+                }
+            })(obj);
+        }
+
         function loadBundle(token) {
             var path = token ? token.split('.') : '',
                 root = bundles,
-                url = localeConf.basePath + '/' + currentLocale,
+                parent,
+                locale = currentLocale,
+                url = localeConf.basePath + '/' + locale,
+                ref,
                 i;
 
             if (path.length > 1) {
                 for (i = 0; i < path.length - 1; i++) {
-                    if (!root[path[i]]) {
-                        root[path[i]] = {};
+                    ref = path[i];
+                    if (!root[ref]) {
+                        root[ref] = {};
                     }
-                    root = root[path[i]];
-                    url += '/' + path[i];
+                    parent = root;
+                    root = root[ref];
+                    url += '/' + ref;
                 }
 
+                if (isFrozen(root)) {
+                    root = angular.extend({}, root);
+                }
                 if (!root._loading) {
                     root._loading = true;
 
                     url += localeConf.fileExtension;
 
-                    $http.get(url)
-                        .success(function (data) {
-                            var key,
-                                path = getPath(token);
-                            // Merge the contents of the obtained data into the stored bundle.
-                            for (key in data) {
-                                if (data.hasOwnProperty(key)) {
-                                    root[key] = data[key];
-                                }
-                            }
+                    // Get data from Angular service
+                    var data = LanguagesService.get(url);
 
-                            // Mark the bundle as having been "loaded".
-                            delete root._loading;
+                    var key,
+                        path = getPath(token);
+                    // Merge the contents of the obtained data into the stored bundle.
+                    for (key in data) {
+                        if (data.hasOwnProperty(key)) {
+                            root[key] = data[key];
+                        }
+                    }
 
-                            // Notify anyone who cares to know about this event.
-                            $rootScope.$broadcast(localeEvents.resourceUpdates);
+                    // Mark the bundle as having been "loaded".
+                    delete root._loading;
+                    parent[ref] = freeze(root);
+                    root = null;
 
-                            // If we issued a Promise for this file, resolve it now.
-                            if (deferrences[path]) {
-                                deferrences[path].resolve(data);
-                            }
-                        })
-                        .error(function (err) {
-                            var path = getPath(token);
+                    // Notify anyone who cares to know about this event.
+                    $rootScope.$broadcast(localeEvents.resourceUpdates, {
+                        locale: locale,
+                        path: path,
+                        bundle: parent[ref]
+                    });
 
-                            $log.error('[localizationService] Failed to load: ' + url);
-
-                            // We can try it again later.
-                            delete root._loading;
-
-                            // If we issued a Promise for this file, reject it now.
-                            if (deferrences[path]) {
-                                deferrences[path].reject(err);
-                            }
-                        });
+                    // If we issued a Promise for this file, resolve it now.
+                    if (deferrences[path]) {
+                        deferrences[path].resolve(path);
+                    }
                 }
             }
         }
@@ -152,7 +167,7 @@ angular.module('ngLocalize')
             }
 
             if (bundle && !bundle._loading) {
-                deferrences[path].resolve(bundle);
+                deferrences[path].resolve(path);
             } else {
                 if (!bundle) {
                     loadBundle(token);
@@ -286,7 +301,6 @@ angular.module('ngLocalize')
                 updateHtmlTagLangAttr(lang);
 
                 $rootScope.$broadcast(localeEvents.localeChanges, currentLocale);
-                $rootScope.$broadcast(localeEvents.resourceUpdates);
 
                 if (cookieStore) {
                     cookieStore.put(localeConf.cookieName, lang);
